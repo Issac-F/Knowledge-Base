@@ -1,0 +1,186 @@
+ /**
+   * Dynamically construct the SQL query with params
+   * Usage:
+   *    SELECT operation
+   *        1) input param for where condition in mapData
+   *            eg:     JDBCUtils.createSql("test_table", "select",
+   *                                 new HashMap<Object, Object>() {{
+   *                                      put("id", 1);
+   *                                      put("name", "xxx");
+   *                                }});
+   *                    The return sql is: select * from test_table where id=1 and name='xxx'
+   *                    ps: the order of the where condition is not guaranteed.
+   *    UPDATE operation
+   *        1) input param for data to be update use prefix 'Key_" for the value that you want to have in where condition in mapData
+   *            eg:     JDBCUtils.createSql("test_table", "update",
+   *                                 new HashMap<Object, Object>() {{
+   *                                      put("id", 1);
+   *                                      put("name", "xxx");
+   *                                      put("Key_age", 1);
+   *                                }});
+   *                    The return sql is: update test_table set id=1,name='xxx' where age=1
+   *                    ps: the order of the where and set condition is not guaranteed.
+   *
+   *    DELETE operation
+   *        1) input param for where condition in mapData
+   *            eg:     JDBCUtils.createSql("test_table", "delete",
+   *                                 new HashMap<Object, Object>() {{
+   *                                      put("id", 1);
+   *                                      put("name", "xxx");
+   *                                }});
+   *                    The return sql is: delete from test_table where id=1 and name='xxx'
+   *                    ps: the order of the where condition is not guaranteed.
+   *
+   *    INSERT operation
+   *        1) input param in mapData
+   *            eg:     JDBCUtils.createSql("test_table", "insert",
+   *                                 new HashMap<Object, Object>() {{
+   *                                      put("id", 1);
+   *                                      put("name", "xxx");
+   *                                }});
+   *                    The return sql is: INSERT INTO test_table (name,id) VALUES('xxx',1)
+   *                    ps: the order of the values is not guaranteed.
+   *
+   * @param tableName table
+   * @param operation support SELECT, UPDATE AND DELETE
+   * @param mapData
+   *    query params and value
+   *    eg: <col_1, val_1>
+   * @return constructed sql query
+   */
+  public static String createSql(
+      @NonNull String tableName,
+      @NonNull String operation,
+      @NonNull Map<?, ?> mapData) {
+    String sql = null;
+
+    // DEFAULT OPERATION IS SELECT
+    String operations = "SELECT", condition = " * FROM " + tableName + " WHERE ";
+    if( operation != null && !operation.equals("")){
+      if( operation.equalsIgnoreCase("UPDATE")){
+        operations = "UPDATE";
+        condition = " " + tableName + " SET ";
+      }else if( operation.equalsIgnoreCase("DELETE")){
+        operations = "DELETE";
+        condition = " FROM " + tableName + " WHERE ";
+      }else if( operation.equalsIgnoreCase("INSERT")){
+        operations = "INSERT";
+        condition = " INTO " + tableName + " (";
+        String link = "";
+        Iterator<?> iterator = mapData.keySet().iterator();
+        while (iterator.hasNext()) {
+          String next = (String) iterator.next();
+          condition += link + next;
+          link = ",";
+        }
+        condition += ") VALUES (";
+      }
+    }
+    String value= "", link ="", keyValueOperations = " WHERE ";
+    Iterator<? extends Map.Entry<?, ?>> iterator = mapData.entrySet().iterator();
+    while (iterator.hasNext()) {
+      Map.Entry<?, ?> next = iterator.next();
+      if( next.getValue() instanceof String ){
+        value = "'" + next.getValue() +"'";
+      }else {
+        value = "" + next.getValue() +"";
+      }
+      if( next.getKey().toString().lastIndexOf("Key_") == -1 ){
+        if(!operations.equals("INSERT")){
+          if( operations.equals("SELECT") || operations.equals("DELETE")){
+            condition += link + "" + next.getKey();
+            condition += "=" + value;
+            link = " AND ";
+          }else {
+            condition += link + "" + next.getKey();
+            condition += "=" + value;
+            link = ",";
+          }
+        }else {
+          condition += link + value;
+          link = ",";
+        }
+      }else {
+        continue;
+      }
+    }
+
+    if( operations.equals("INSERT") ){
+      condition += ")";
+    }else if(operations.equals("UPDATE")){
+      condition += " WHERE ";
+      String and = "";
+      Iterator<? extends Map.Entry<?, ?>> iterator1 = mapData.entrySet().iterator();
+      while (iterator1.hasNext()) {
+        Map.Entry<?, ?> next = iterator1.next();
+        if( next.getValue() instanceof String ){
+          value = "'" + next.getValue() +"'";
+        }else {
+          value = "" + next.getValue() +"";
+        }
+        String key = next.getKey().toString();
+        if( key.lastIndexOf("Key_") != -1 ){
+          key =  key.substring(key.indexOf("Key_")+ 4, key.length());
+          condition += and +key + "=" + value;
+          and = " AND ";
+        }
+      }
+    }
+
+    sql = operations + condition;
+    return sql;
+  }
+
+
+
+###########TEST#########################
+
+  @Test
+  public void testCreateSelectSql() {
+    String select = JDBCUtils.createSql("test_table", "select", new HashMap<Object, Object>() {{
+      put("id", 1);
+      put("name", "xxx");
+    }});
+    Assert.assertTrue(select.equalsIgnoreCase("select * from test_table where id=1 and name='xxx'")
+    || select.equalsIgnoreCase("select * from test_table where name='xxx' AND id=1"));
+  }
+
+  @Test
+  public void testCreateUpdateSql() {
+    String update = JDBCUtils.createSql("test_table", "update", new HashMap<Object, Object>() {{
+      put("id", 1);
+      put("name", "xxx");
+      put("Key_age", 1);
+    }});
+    System.out.println(update);
+    Assert.assertTrue(
+        update.equalsIgnoreCase("update test_table set id=1,name='xxx' where age=1")
+            || update.equalsIgnoreCase("update test_table set name='xxx',id=1 where age=1"));
+
+  }
+
+  @Test
+  public void testCreateDeleteSql() {
+    String delete = JDBCUtils.createSql("test_table", "delete", new HashMap<Object, Object>() {{
+      put("id", 1);
+      put("name", "xxx");
+    }});
+    System.out.println(delete);
+    Assert.assertTrue(delete.equalsIgnoreCase("delete from test_table where id=1 and name='xxx'")
+        || delete.equalsIgnoreCase("delete from test_table where name='xxx' AND id=1"));
+
+  }
+
+  @Test
+  public void testInsertSql() {
+    String insert = JDBCUtils.createSql("test_table", "insert", new HashMap<Object, Object>() {{
+      put("id", 1);
+      put("name", "xxx");
+    }});
+    System.out.println(insert);
+    Assert.assertTrue(insert.equalsIgnoreCase("insert into test_table (id,name) values (1,'xxx')")
+        || insert.equalsIgnoreCase("insert into test_table (name,id) values ('xxx',1)"));
+
+  }
+
+
